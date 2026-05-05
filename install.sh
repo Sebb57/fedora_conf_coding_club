@@ -1,28 +1,21 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-set -e
+INIT_DIR="$HOME/.local/state/fedora-init"
+mkdir -p "$INIT_DIR"
 
-echo "Updating system"
-sudo dnf update -y
+log() { echo -e "\n==> $1"; }
 
-echo "Installing base development tools"
-sudo dnf groupinstall -y "Development Tools"
+setup_repos() {
+    sudo dnf update -y
 
-echo "Installing essentials"
-sudo dnf install -y \
-    python3 python3-pip \
-    gcc gcc-c++ make \
-    man-db man-pages \
-    git curl wget \
-    nodejs npm \
-    zsh util-linux-user
+    sudo dnf install -y \
+        dnf-plugins-core \
+        git curl wget zsh util-linux-user
 
-# -----------------------
-# VS CODE INSTALL
-# -----------------------
-echo "Installing VScode"
-sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
-sudo tee /etc/yum.repos.d/vscode.repo <<EOF
+    sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
+
+    sudo tee /etc/yum.repos.d/vscode.repo >/dev/null <<EOF
 [code]
 name=VS Code
 baseurl=https://packages.microsoft.com/yumrepos/vscode
@@ -30,91 +23,56 @@ enabled=1
 gpgcheck=1
 gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 EOF
-
-sudo dnf install -y code
-
-# -----------------------
-# VSCODE EXTENSIONS
-# -----------------------
-echo "Installing VScode extensions"
-
-extensions=(
-    # Python
-    ms-python.python
-    ms-python.vscode-pylance
-
-    # C/C++
-    ms-vscode.cpptools
-
-    # Web
-    esbenp.prettier-vscode
-    dbaeumer.vscode-eslint
-    ritwickdey.liveserver
-
-    # Git
-    eamodio.gitlens
-
-    # General
-    streetsidesoftware.code-spell-checker
-    usernamehw.errorlens
-)
-
-for ext in "${extensions[@]}"; do
-    code --install-extension $ext || true
-done
-
-# -----------------------
-# VSCODE SETTINGS
-# -----------------------
-echo "Configuring VS Code settings..."
-
-mkdir -p ~/.config/Code/User
-
-cat > ~/.config/Code/User/settings.json <<EOF
-{
-    "files.autoSave": "onFocusChange",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 4,
-    "editor.minimap.enabled": false,
-    "workbench.startupEditor": "none",
-    "editor.fontSize": 14,
-    "editor.wordWrap": "on",
-    "terminal.integrated.defaultProfile.linux": "zsh"
 }
-EOF
 
-# -----------------------
-# MINICONDA INSTALL
-# -----------------------
-echo "Installing Miniconda..."
-cd /tmp
-curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
-$HOME/miniconda/bin/conda init
-rm -f Miniconda3-latest-Linux-x86_64.sh
+base_packages() {
+    sudo dnf install -y \
+        gcc gcc-c++ make cmake clang \
+        python3 python3-pip python3-devel \
+        git curl wget unzip tar \
+        htop btop tmux neovim \
+        ripgrep fd-find fzf bat \
+        nodejs npm \
+        man-db man-pages \
+        flatpak
+}
 
-# -----------------------
-# ZSH + OH MY ZSH
-# -----------------------
-echo "Installing Oh My Zsh..."
-RUNZSH=no CHSH=no sh -c \
-"$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+dev_tools() {
+    sudo dnf groupinstall -y "Development Tools"
+}
 
-# Plugins
-echo "Installing Zsh plugins..."
+vscode() {
+    sudo dnf install -y code
 
-git clone https://github.com/zsh-users/zsh-autosuggestions \
-    ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions
+    local extensions=(
+        ms-python.python
+        ms-python.vscode-pylance
+        ms-vscode.cpptools
+        esbenp.prettier-vscode
+        dbaeumer.vscode-eslint
+        eamodio.gitlens
+        streetsidesoftware.code-spell-checker
+        usernamehw.errorlens
+    )
 
-git clone https://github.com/zsh-users/zsh-syntax-highlighting \
-    ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting
+    for ext in "${extensions[@]}"; do
+        code --install-extension "$ext" || true
+    done
+}
 
-# -----------------------
-# ZSH CONFIG
-# -----------------------
-echo "Configuring .zshrc..."
+zsh_setup() {
+    if [ ! -d "$HOME/.oh-my-zsh" ]; then
+        RUNZSH=no CHSH=no sh -c \
+        "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    fi
 
-cat > ~/.zshrc <<'EOF'
+    git clone https://github.com/zsh-users/zsh-autosuggestions \
+        ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
+
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting \
+        ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+
+    cat > ~/.zshrc <<'EOF'
 export ZSH="$HOME/.oh-my-zsh"
 
 ZSH_THEME="agnoster"
@@ -127,23 +85,86 @@ plugins=(
 
 source $ZSH/oh-my-zsh.sh
 
-# Better history
 HISTSIZE=10000
 SAVEHIST=10000
 setopt SHARE_HISTORY
 
-# Autocomplete tweaks
 bindkey '^[[A' history-search-backward
 bindkey '^[[B' history-search-forward
 
-# Aliases
 alias ls="ls -lah"
 EOF
 
-# -----------------------
-# SET ZSH DEFAULT
-# -----------------------
-echo "Setting Zsh as default shell"
-chsh -s $(which zsh)
+    chsh -s "$(which zsh)" || true
+}
 
-echo "Done. Reboot or run: exec zsh"
+conda_setup() {
+    if [ ! -d "$HOME/miniconda" ]; then
+        log "Installing Miniconda"
+        cd /tmp
+        curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+        bash Miniconda3-latest-Linux-x86_64.sh -b -p "$HOME/miniconda"
+        "$HOME/miniconda/bin/conda" init zsh
+        rm -f Miniconda3-latest-Linux-x86_64.sh
+    fi
+}
+
+flatpaks() {
+    log "Setting up Flatpak"
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+    flatpak install -y flathub \
+        com.spotify.Client \
+        org.telegram.desktop \
+        org.signal.Signal || true
+}
+
+init() {
+    log "INIT: base system setup"
+    setup_repos
+    dev_tools
+    base_packages
+    vscode
+    zsh_setup
+    conda_setup
+    flatpaks
+
+    touch "$INIT_DIR/done"
+    log "INIT complete"
+}
+
+update() {
+    log "UPDATE: extra packages"
+
+    sudo dnf upgrade -y
+
+    sudo dnf install -y \
+        syncthing \
+        weechat \
+        mpv \
+        zathura \
+        qutebrowser \
+        podman \
+        kubernetes-client \
+        task \
+        newsboat
+
+    flatpak update -y || true
+
+    log "UPDATE complete"
+}
+
+usage() {
+    cat <<EOF
+Usage: $0 [init|update]
+
+init   -> full system setup
+update -> additional packages + upgrades
+EOF
+}
+
+case "${1:-}" in
+    init) init ;;
+    update) update ;;
+    *) usage ;;
+esac

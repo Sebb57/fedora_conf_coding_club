@@ -1,3 +1,3 @@
 ```bash
-bash <(curl -s https://github.com/Sebb57/fedora_conf_coding_club/install.sh)
+bash <(curl -s https://raw.githubusercontent.com/Sebb57/fedora_conf_coding_club/main/install.sh)
 ```
