@@ -5,17 +5,25 @@ INIT_DIR="$HOME/.local/state/fedora-init"
 mkdir -p "$INIT_DIR"
 
 log() { echo -e "\n==> $1"; }
+warn() { echo -e "\n[WARN] $1"; }
+ok() { echo -e "[OK] $1"; }
+
+run() {
+    echo ""
+    echo "---- $1 ----"
+    shift
+    "$@" || warn "Step failed: $*"
+}
 
 setup_repos() {
-    sudo dnf update -y
+    run "System update" sudo dnf update -y
 
-    sudo dnf install -y \
+    run "Base tools" sudo dnf install -y \
         dnf-plugins-core \
         git curl wget zsh util-linux-user
 
-    sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
-
-    sudo tee /etc/yum.repos.d/vscode.repo >/dev/null <<EOF
+    if [ ! -f /etc/yum.repos.d/vscode.repo ]; then
+        run "Adding VS Code repo" sudo tee /etc/yum.repos.d/vscode.repo >/dev/null <<EOF
 [code]
 name=VS Code
 baseurl=https://packages.microsoft.com/yumrepos/vscode
@@ -23,14 +31,15 @@ enabled=1
 gpgcheck=1
 gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 EOF
+    fi
 }
 
 base_packages() {
-    sudo dnf install -y \
+    run "Base packages" sudo dnf install -y \
         gcc gcc-c++ make cmake clang \
         python3 python3-pip python3-devel \
         git curl wget unzip tar \
-        htop btop tmux neovim \
+        htop btop tmux neovim vim \
         ripgrep fd-find fzf bat \
         nodejs npm \
         man-db man-pages \
@@ -38,11 +47,11 @@ base_packages() {
 }
 
 dev_tools() {
-    sudo dnf5 install dnf5-commands -y
+    run "Development Tools group" sudo dnf groupinstall -y "Development Tools"
 }
 
 vscode() {
-    sudo dnf install -y code
+    run "Installing VS Code" sudo dnf install -y code
 
     local extensions=(
         ms-python.python
@@ -56,26 +65,30 @@ vscode() {
     )
 
     for ext in "${extensions[@]}"; do
-        code --install-extension "$ext" || true
+        run "Installing extension $ext" code --install-extension "$ext"
     done
 }
 
 zsh_setup() {
-    if [ ! -d "$HOME/.oh-my-zsh" ]; then
-        RUNZSH=no CHSH=no sh -c \
-        "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-    fi
+    run "Installing oh-my-zsh" bash -c '
+        if [ ! -d "$HOME/.oh-my-zsh" ]; then
+            RUNZSH=no CHSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+        fi
+    '
 
-    git clone https://github.com/zsh-users/zsh-autosuggestions \
-        ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
+    run "Zsh plugins" bash -c '
+        mkdir -p ~/.oh-my-zsh/custom/plugins
+        git clone https://github.com/zsh-users/zsh-autosuggestions \
+            ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
 
-    git clone https://github.com/zsh-users/zsh-syntax-highlighting \
-        ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+        git clone https://github.com/zsh-users/zsh-syntax-highlighting \
+            ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+    '
 
-    cat > ~/.zshrc <<'EOF'
-export ZSH="$HOME/.oh-my-zsh"
+    run "Writing .zshrc" bash -c "cat > ~/.zshrc <<'EOF'
+export ZSH=\"\$HOME/.oh-my-zsh\"
 
-ZSH_THEME="agnoster"
+ZSH_THEME=\"agnoster\"
 
 plugins=(
     git
@@ -83,7 +96,7 @@ plugins=(
     zsh-syntax-highlighting
 )
 
-source $ZSH/oh-my-zsh.sh
+source \$ZSH/oh-my-zsh.sh
 
 HISTSIZE=10000
 SAVEHIST=10000
@@ -92,36 +105,37 @@ setopt SHARE_HISTORY
 bindkey '^[[A' history-search-backward
 bindkey '^[[B' history-search-forward
 
-alias ls="ls -lah"
-alias updateConf="bash <(curl -fsSL https://raw.githubusercontent.com/Sebb57/fedora_conf_coding_club/main/install.sh) update"
-EOF
+alias ls=\"ls -lah\"
+EOF"
 
-    chsh -s "$(which zsh)" || true
+    run "Changing default shell" chsh -s "$(which zsh)" "$USER"
 }
 
 conda_setup() {
     if [ ! -d "$HOME/miniconda" ]; then
-        log "Installing Miniconda"
-        cd /tmp
-        curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-        bash Miniconda3-latest-Linux-x86_64.sh -b -p "$HOME/miniconda"
-        "$HOME/miniconda/bin/conda" init zsh
-        rm -f Miniconda3-latest-Linux-x86_64.sh
+        run "Installing Miniconda" bash -c '
+            cd /tmp
+            curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+            bash Miniconda3-latest-Linux-x86_64.sh -b -p "$HOME/miniconda"
+        '
+        run "Init conda for zsh" "$HOME/miniconda/bin/conda" init zsh
+    else
+        ok "Miniconda already installed"
     fi
 }
 
 flatpaks() {
-    log "Setting up Flatpak"
-    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+    run "Flatpak setup" flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
-    flatpak install -y flathub \
+    run "Installing flatpaks" flatpak install -y flathub \
         com.spotify.Client \
         org.telegram.desktop \
-        org.signal.Signal || true
+        org.signal.Signal
 }
 
 init() {
-    log "INIT: base system setup"
+    log "STARTING FULL SETUP"
+
     setup_repos
     dev_tools
     base_packages
@@ -131,33 +145,23 @@ init() {
     flatpaks
 
     touch "$INIT_DIR/done"
-    log "INIT complete"
+    ok "SETUP COMPLETE"
 }
 
 update() {
-    log "UPDATE: extra packages"
+    log "UPDATING SYSTEM"
 
-    sudo dnf upgrade -y
+    run "System upgrade" sudo dnf upgrade -y
 
-    sudo dnf install -y \
-        vim
+    run "Extra tools" sudo dnf install -y vim
 
-    flatpak update -y || true
+    run "Flatpak update" flatpak update -y
 
-    log "UPDATE complete"
-}
-
-usage() {
-    cat <<EOF
-Usage: $0 [init|update]
-
-init   -> full system setup
-update -> additional packages + upgrades
-EOF
+    ok "UPDATE COMPLETE"
 }
 
 case "${1:-}" in
     init) init ;;
     update) update ;;
-    *) usage ;;
+    *) echo "Usage: $0 [init|update]" ;;
 esac
