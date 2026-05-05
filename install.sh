@@ -38,7 +38,7 @@ base_packages() {
 }
 
 dev_tools() {
-    sudo dnf5 install dnf5-commands -y "Development Tools"
+    sudo dnf5 install dnf5-commands -y
 }
 
 vscode() {
@@ -140,15 +140,7 @@ update() {
     sudo dnf upgrade -y
 
     sudo dnf install -y \
-        syncthing \
-        weechat \
-        mpv \
-        zathura \
-        qutebrowser \
-        podman \
-        kubernetes-client \
-        task \
-        newsboat
+        vim
 
     flatpak update -y || true
 
