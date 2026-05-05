@@ -38,7 +38,7 @@ base_packages() {
 }
 
 dev_tools() {
-    sudo dnf groupinstall -y "Development Tools"
+    sudo dnf5 install dnf5-commands -y "Development Tools"
 }
 
 vscode() {
