@@ -159,7 +159,7 @@ update() {
 
     run "System upgrade" sudo dnf upgrade -y
 
-    run "Extra tools" sudo dnf install -y "${BASE_PACKAGES[@]}"
+    run "Extra tools" sudo dnf install -y "${PACKAGES[@]}"
 
     run "Flatpak update" flatpak update -y
 
