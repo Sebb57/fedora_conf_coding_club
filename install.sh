@@ -93,6 +93,7 @@ bindkey '^[[A' history-search-backward
 bindkey '^[[B' history-search-forward
 
 alias ls="ls -lah"
+alias updateConf="bash <(curl -fsSL https://raw.githubusercontent.com/Sebb57/fedora_conf_coding_club/main/install.sh) update"
 EOF
 
     chsh -s "$(which zsh)" || true
