@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PACKAGES=(
+    gcc gcc-c++ make cmake clang
+    python3 python3-pip python3-devel
+    git curl wget unzip tar
+    htop btop tmux neovim vim
+    ripgrep fd-find fzf bat
+    nodejs npm
+    man-db man-pages
+    flatpak
+    asciiquarium
+)
+
 INIT_DIR="$HOME/.local/state/fedora-init"
 mkdir -p "$INIT_DIR"
 
@@ -35,15 +47,7 @@ EOF
 }
 
 base_packages() {
-    run "Base packages" sudo dnf install -y \
-        gcc gcc-c++ make cmake clang \
-        python3 python3-pip python3-devel \
-        git curl wget unzip tar \
-        htop btop tmux neovim vim \
-        ripgrep fd-find fzf bat \
-        nodejs npm \
-        man-db man-pages \
-        flatpak
+    run "Base packages" sudo dnf install -y "${BASE_PACKAGES[@]}"
 }
 
 dev_tools() {
@@ -88,7 +92,7 @@ zsh_setup() {
     run "Writing .zshrc" bash -c "cat > ~/.zshrc <<'EOF'
 export ZSH=\"\$HOME/.oh-my-zsh\"
 
-ZSH_THEME=\"agnoster\"
+ZSH_THEME=\"af-magic\"
 
 plugins=(
     git
@@ -106,6 +110,7 @@ bindkey '^[[A' history-search-backward
 bindkey '^[[B' history-search-forward
 
 alias ls=\"ls -lah\"
+alias update-conf=\"bash <(curl -fsSL https://raw.githubusercontent.com/Sebb57/fedora_conf_coding_club/main/install.sh) update\"
 EOF"
 
     run "Changing default shell" chsh -s "$(which zsh)" "$USER"
@@ -119,6 +124,7 @@ conda_setup() {
             bash Miniconda3-latest-Linux-x86_64.sh -b -p "$HOME/miniconda"
         '
         run "Init conda for zsh" "$HOME/miniconda/bin/conda" init zsh
+        run "Disable auto-activate base" "$HOME/miniconda/bin/conda" config --set auto_activate_base false
     else
         ok "Miniconda already installed"
     fi
@@ -126,11 +132,11 @@ conda_setup() {
 
 flatpaks() {
     run "Flatpak setup" flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-
-    run "Installing flatpaks" flatpak install -y flathub \
-        com.spotify.Client \
-        org.telegram.desktop \
-        org.signal.Signal
+    
+    # run "Installing flatpaks" flatpak install -y flathub \
+    #     com.spotify.Client \
+    #     org.telegram.desktop \
+    #     org.signal.Signal
 }
 
 init() {
@@ -153,7 +159,7 @@ update() {
 
     run "System upgrade" sudo dnf upgrade -y
 
-    run "Extra tools" sudo dnf install -y vim
+    run "Extra tools" sudo dnf install -y "${BASE_PACKAGES[@]}"
 
     run "Flatpak update" flatpak update -y
 
