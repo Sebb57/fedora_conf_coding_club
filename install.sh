@@ -209,6 +209,34 @@ EOF
     fi
 }
 
+keyring() {
+    # With autologin nothing unlocks the login keyring, so every app using it
+    # prompts for the password. Replace it with an unencrypted (empty password)
+    # keyring, which is never locked.
+    local dir="$TARGET_HOME/.local/share/keyrings"
+    local file="$dir/login.keyring"
+
+    # Already unencrypted: keep it (and its stored secrets)
+    if [[ -f "$file" && "$(head -c 12 "$file")" != GnomeKeyring ]]; then
+        return 0
+    fi
+
+    as_user mkdir -p "$dir" || return 1
+    if [[ -f "$file" ]]; then
+        mv "$file" "$file.bak-$(date +%Y%m%d%H%M%S)"
+    fi
+    as_user tee "$file" >/dev/null <<EOF || return 1
+[keyring]
+display-name=Login
+ctime=$(date +%s)
+mtime=0
+lock-on-idle=false
+lock-after=false
+EOF
+    chmod 0600 "$file"
+    echo login | as_user tee "$dir/default" >/dev/null
+}
+
 flatpaks() {
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &&
         flatpak remote-modify --enable flathub &&
@@ -301,10 +329,14 @@ conda_setup() {
 }
 
 vscode_setup() {
-    local ext
+    # The VS Code CLI is noisy on stderr (e.g. Node's url.parse() deprecation
+    # warning), so only show its output when an install actually fails.
+    local ext out
     for ext in "${VSCODE_EXTENSIONS[@]}"; do
-        as_user code --install-extension "$ext" --force >/dev/null ||
+        if ! out="$(as_user code --install-extension "$ext" --force 2>&1)"; then
+            echo "$out"
             warn "Extension $ext failed"
+        fi
     done
 
     local settings_dir="$TARGET_HOME/.config/Code/User"
@@ -357,6 +389,7 @@ apply() {
     run "Passwordless sudo" passwordless
     if [[ "$AUTOLOGIN" == 1 ]]; then
         run "Autologin / no lock screen" autologin
+        run "Keyring without password" keyring
     fi
     run "Flatpak" flatpaks
     run "Update command" install_update_cmd
